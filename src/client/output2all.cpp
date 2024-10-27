@@ -26,12 +26,11 @@ int main() {
     // 2 main-while
     while (1) {
         bzero((void*)packet, packetsize);
-        if (mq_receive_n(mq, (char*)packet, PACKET_HEAD_SIZE_H) <= 0) {
+        if (mq_receive(mq, (char*)packet, packetsize, 0) <= 0) {
+            perror("mq_receive");
+            fprintf(stderr, "mq_r in output2all.cpp error.\n");
             break;
-        } else {
-            if (mq_receive_n(mq, packet->data, packet->datalen) <= 0) {
-                break;
-            }
+            // continue;
         }
         std::cout << packet->srcname << ": " << packet->data << std::endl;
     }

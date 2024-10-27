@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
     // 2 main-while
     while (1) {
         // (1) get msg
-        std::cout << "<";
+        std::cout << ">";
         bzero((void*)databuf, MAX_DATA_LEN_H + 1);
         std::cin.getline(databuf, MAX_DATA_LEN_H + 1);
         datalen = strlen(databuf);
@@ -46,8 +46,8 @@ int main(int argc, char* argv[]) {
         bzero((void*)packet, packetsize);
         encode(packet, ALL, datalen, username, NULL, databuf);
         // (3) send packet to mq
-        if (mq_send_n(mq, (char*)packet, PACKET_HEAD_SIZE_H + datalen)) {
-            std::cerr << "send packet to send mq falied." << std::endl;
+        if (mq_send(mq, (char*)packet, PACKET_HEAD_SIZE_H + datalen, 0)) {
+            perror("mq_send");
         }
     }
     // 3 free

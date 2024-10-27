@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
         close(sockfd);
         return -1;
     } else if (recvlen == 0) {
-        std::cout << "server closed." << std::endl;
+        std::cout << "server closed in main." << std::endl;
         close(sockfd);
         return 0;
     } else {
@@ -63,49 +63,70 @@ int main(int argc, char* argv[]) {
             close(sockfd);
             return 0;
         } else {
-            std::cout << "debug" << std::endl;
             free((void*)packet);
         }
     }
     // 4 pre shared res
     // (1) create SEND_MQUEUE
-    mqd_t mq_send = mq_open(SEND_MQUEUE, O_CREAT | O_RDWR, 0644, NULL);
+    struct mq_attr attr;
+    attr.mq_flags = 0;   // block
+    attr.mq_maxmsg = 10;
+    attr.mq_msgsize = (PACKET_HEAD_SIZE_H + MAX_DATA_LEN_H + 1) * sizeof(char);   // 大于packet的最大长度就行
+    attr.mq_curmsgs = 0;   // 当前消息数，没有意义，设置为0
+    mq_unlink(SEND_MQUEUE);
+    mqd_t mq_send = mq_open(SEND_MQUEUE, O_CREAT | O_RDWR, 0644, &attr);
     if (mq_send == (mqd_t)-1) {
+        perror("mq_open");
         std::cerr << "Err: create send mq failed." << std::endl;
         return -1;
     }
+    /*
+    if (mq_getattr(mq_send, &attr) == -1) {
+        perror("mq_getattr");
+    } else {
+        std::cout << "Max message size: " << attr.mq_msgsize << std::endl;
+    }
+    */
     // (2) create DSTNAME_SHM
     int dst_shm_fd = shm_open(DSTNAME_SHM, O_CREAT | O_RDWR, 0644);
     if (dst_shm_fd == -1) {
         std::cerr << "Err: create dstname shm failed." << std::endl;
         return -1;
     }
+    /*
     if (ftruncate(dst_shm_fd, MAX_NAME_LEN_H + 1) == -1) {
         std::cerr << "Err: set dstname shm size failed." << std::endl;
         return -1;
     }
-    char* dstname = (char*)mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, dst_shm_fd, 0);
+    */
+    char* dstname = (char*)mmap(0, MAX_NAME_LEN_H + 1, PROT_READ | PROT_WRITE, MAP_SHARED, dst_shm_fd, 0);
     if (dstname == MAP_FAILED) {
         std::cerr << "Err: get dstname shm failed." << std::endl;
         return -1;
     }
     memset((void*)dstname, 0x00, MAX_NAME_LEN_H + 1);
     // (3) create RECV_ALL_MQUEUE
-    mqd_t mq_recvall = mq_open(RECV_ALL_MQUEUE, O_CREAT | O_RDWR, 0644, NULL);
+    mq_unlink(RECV_ALL_MQUEUE);
+    mqd_t mq_recvall = mq_open(RECV_ALL_MQUEUE, O_CREAT | O_RDWR, 0644, &attr);
     if (mq_recvall == (mqd_t)-1) {
         std::cerr << "Err: create recv all mq failed." << std::endl;
         return -1;
     }
     // (4) create RECV_SINGLE_MQUEUE
-    mqd_t mq_recvsingle = mq_open(RECV_SINGLE_MQUEUE, O_CREAT | O_RDWR, 0644, NULL);
+    mq_unlink(RECV_SINGLE_MQUEUE);
+    mqd_t mq_recvsingle = mq_open(RECV_SINGLE_MQUEUE, O_CREAT | O_RDWR, 0644, &attr);
     if (mq_recvsingle == (mqd_t)-1) {
         std::cerr << "Err: create recv single mq failed." << std::endl;
         return -1;
     }
-    // TODO:5 tmux
-    // 6 start read and write thread
+    // 5 start read and write thread
     std::thread readWorkerT(readWorker, sockfd);
     std::thread writeWorkerT(writeWorker, sockfd);
+    // 6 start ui
+    char tmp[64] = {0};
+    snprintf(tmp, sizeof(tmp), "../src/client/start-ui.sh %s", username);
+    system(tmp);
+    sleep(10);
     // 7 free
     readWorkerT.join();
     writeWorkerT.join();

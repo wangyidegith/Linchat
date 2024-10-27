@@ -30,6 +30,7 @@ int main(int argc, char* argv[]) {
             fprintf(stderr, "Err: epoll wait failed.\n");
             continue;
         }
+        printf("epoll have events.\n");
         // (2) process-while
         for (int i = 0; i < event_count; i++) {
             if (server->getEvs()[i].data.fd == server->getFd()) {
@@ -41,7 +42,8 @@ int main(int argc, char* argv[]) {
                 }
             } else {
                     if (server->clientProcess(server->getEvs()[i].data.fd) == -1) {
-                        fprintf(stderr, "Err: client%d process failed.\n", server->getEvs()[i].data.fd);
+                        server->delClient(server->getEvs()[i].data.fd);
+                        printf("?\n");
                         continue;
                     }
             }

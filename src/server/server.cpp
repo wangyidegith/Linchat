@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "../../include/server.h"
 #include "../../include/m-net.h"
 
@@ -7,7 +9,6 @@ Server::~Server() {
         close(this->epfd);
         close(this->servfd);
     }
-    this->clients.erase(this->packet->srcname);
     if (this->packet != NULL) {
         free((void*)this->packet);
     }
@@ -57,6 +58,8 @@ void Server::delClient(int clifd) {
         epoll_ctl(this->epfd, EPOLL_CTL_DEL, clifd, NULL);
         close(clifd);
     }
+    std::string keytmp(this->packet->srcname);
+    this->clients.erase(keytmp);
 }
 
 void Server::addClient() {
@@ -83,11 +86,17 @@ size_t Server::setUsersbuf() {
     size_t all_len = 0;
     memset((void*)(this->getUsersbuf()), 0x00, this->getUserssize());
     for (const auto& pair : this->clients) {
-        strncpy(this->getUsersbuf() + single_len, pair.first, strlen(pair.first));
-        single_len = strlen(pair.first) + 1;
+        strncpy(this->getUsersbuf() + single_len, pair.first.c_str(), pair.first.length());
+        single_len = pair.first.length() + 1;
         all_len += single_len;
     }
     return all_len;
+}
+
+void printMap(const std::unordered_map<char*, int>& myMap) {
+    for (const auto& pair : myMap) {
+        std::cout << "Key: " << pair.first << ", Value: " << pair.second << std::endl;
+    }
 }
 
 int Server::clientProcess(int clifd) {
@@ -101,55 +110,72 @@ int Server::clientProcess(int clifd) {
         return -1;
     } else if (recv_ret == 0) {
         printf("client%d closed.\n", clifd);
-        this->delClient(clifd);
-        return 0;
+        return -1;
     }
     // (2) head process
     if (this->packet->trans_type == REGISTER) {
-        auto it = this->clients.find(this->packet->srcname);
+        std::string keytmp(this->packet->srcname);
+        auto it = this->clients.find(keytmp);
         if (it != this->clients.end()) {
             this->packet->datalen = -1;
-            if (writen(clifd, (char*)packet, PACKET_HEAD_SIZE)) {
+            if (writen(clifd, (char*)packet, PACKET_HEAD_SIZE) < 0) {
                 fprintf(stderr, "Err: send name occupied info failed.\n");
+                return -1;
             }
             this->delClient(clifd);
+            printf("debug1\n");
         } else {
-            this->clients.insert({this->packet->srcname, clifd});
+            this->clients.insert({keytmp, clifd});
             this->packet->datalen = this->setUsersbuf();
             for (const auto& pair : this->clients) {
                 if (writen(pair.second, (char*)(this->packet), PACKET_HEAD_SIZE) == -1) {
-                    fprintf(stderr, "Err: users head - to %s failed.\n", pair.first);
+                    fprintf(stderr, "Err: users head - to %s failed.\n", pair.first.c_str());
                     continue;
                 }
                 if (writen(pair.second, this->getUsersbuf(), this->packet->datalen) == -1) {
-                    fprintf(stderr, "Err: users body - to %s failed.\n", pair.first);
+                    fprintf(stderr, "Err: users body - to %s failed.\n", pair.first.c_str());
                     continue;
                 }
             }
+            printf("debug2\n");
         }
         return 0;
     }
     // 2 body
     // (1) read body from client_fd
-    recv_ret = readn(clifd, (char*)(this->packet) + this->PACKET_HEAD_SIZE, this->packet->datalen);
+    recv_ret = readn(clifd, this->packet->data, this->packet->datalen);
     if (recv_ret < 0) {
         fprintf(stderr, "Err: recv from client%d falied.\n", clifd);
         return -1;
     } else if (recv_ret == 0) {
         printf("client%d closed.\n", clifd);
-        this->delClient(clifd);
-        return 0;
+        return -1;
     }
     // (2) body process
     if (this->packet->trans_type == ALL) {
+        printf("debug all :\n");
+        printf("head :\n");
+        printf("type : %d\n", this->packet->trans_type);
+        printf("datalen : %d\n", this->packet->datalen);
+        printf("srcname : %s\n", this->packet->srcname);
+        printf("dstname : %s\n", this->packet->dstname);
+        printf("data : %s\n", this->packet->data);
         for (auto it = this->clients.begin(); it != this->clients.end(); ++it) {
-            if (writen(it->second, (char*)(this->packet), this->PACKET_HEAD_SIZE + this->packet->datalen)) {
-                fprintf(stderr, "Err: all - from %s forward to %s failed.\n", this->packet->srcname, it->first);
-                continue;
+            if (writen(it->second, (char*)(this->packet), this->PACKET_HEAD_SIZE + this->packet->datalen) < 0) {
+                fprintf(stderr, "Err: all - from %s forward to %s failed.\n", this->packet->srcname, it->first.c_str());
+                return -1;
             }
         }
     } else if (this->packet->trans_type == SINGLE) {
-        auto it = this->clients.find(this->packet->dstname);
+        printf("debug all :\n");
+        printf("head :\n");
+        printf("type : %d\n", this->packet->trans_type);
+        printf("datalen : %d\n", this->packet->datalen);
+        printf("srcname : %s\n", this->packet->srcname);
+        printf("dstname : %s\n", this->packet->dstname);
+        printf("data : %s\n", this->packet->data);
+        std::string keytmp(this->packet->dstname);
+        auto it = this->clients.find(keytmp);
         if (it != this->clients.end()) {
             if (writen(it->second, (char*)(this->packet), this->PACKET_HEAD_SIZE + this->packet->datalen) == -1) {
                 fprintf(stderr, "Err: single - from %s forward to %s failed.\n", this->packet->srcname, this->packet->dstname);

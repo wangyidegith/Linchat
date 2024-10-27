@@ -25,14 +25,12 @@ int main() {
     while (1) {
         // get msg from mq
         bzero((void*)packet, packetsize);
-        // read head
-        if (mq_receive_n(mq, (char*)packet, PACKET_HEAD_SIZE_H) <= 0) {
+        // read
+        if (mq_receive(mq, (char*)packet, packetsize, 0) <= 0) {
+            perror("mq_receive");
+            fprintf(stderr, "mq_r in output2single.cpp error.\n");
             break;
-        } else {
-            // read body
-            if (mq_receive_n(mq, packet->data, packet->datalen) <= 0) {
-                break;
-            }
+            // continue;
         }
         // send data to sreen
         std::cout << packet->srcname << ": " << packet->data << std::endl;

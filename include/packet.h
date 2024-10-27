@@ -3,8 +3,6 @@
 
 #define MAX_DATA_LEN_H 255
 
-#define NAME_OCCUPIED "Sorry, your name is occupied, please alter." 
-
 typedef enum TRANS_TYPE {
     REGISTER,
     ALL,

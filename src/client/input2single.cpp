@@ -12,6 +12,7 @@
 int main(int argc, char* argv[]) {
     // 0 get args
     if (argc != 2) {
+        std::cerr << "Usage: ./elfname <username>" << std::endl;
         return -1;
     }
     char* username = argv[1];
@@ -29,7 +30,7 @@ int main(int argc, char* argv[]) {
         mq_close(mq);
         return -1;
     }
-    char* dstname = (char*)mmap(0, 4096, PROT_READ, MAP_SHARED, shm_fd, 0);
+    char* dstname = (char*)mmap(0, MAX_NAME_LEN_H + 1, PROT_READ, MAP_SHARED, shm_fd, 0);
     if (dstname == MAP_FAILED) {
         std::cerr << "Err: get dstname shm failed." << std::endl;
         return -1;
@@ -44,7 +45,7 @@ int main(int argc, char* argv[]) {
     int datalen;
     // 2 main-while
     while (1) {
-        std::cout << "<";
+        std::cout << ">";
         bzero((void*)databuf, MAX_DATA_LEN_H + 1);
         std::cin.getline(databuf, MAX_DATA_LEN_H + 1);
         if (strlen(databuf) == 0) {
@@ -57,8 +58,8 @@ int main(int argc, char* argv[]) {
         bzero((void*)packet, packetsize);
         datalen = strlen(databuf);
         encode(packet, SINGLE, datalen, username, dstname, databuf);
-        if (mq_send_n(mq, (char*)packet, PACKET_HEAD_SIZE_H + datalen)) {
-            std::cerr << "send packet to send mq falied." << std::endl;
+        if (mq_send(mq, (char*)packet, PACKET_HEAD_SIZE_H + datalen, 0)) {
+            perror("mq_send");
         }
     }
     // 3 free

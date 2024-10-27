@@ -12,6 +12,8 @@
 #include <sys/un.h>
 #include <mqueue.h>
 
+#include "../include/m-net.h"
+
 #define LISTEN_QUEUE 24
 
 int createListenSocket(const char* ip, unsigned short port) {
@@ -59,7 +61,7 @@ int createListenSocket(const char* ip, unsigned short port) {
     return listen_fd;
 }
 
-int createListenUsocket(const char* SOCKET_PATH) {
+int createListenUsocket(const char* m_unix_socket_path) {
     int usockfd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (usockfd < 0) {
         perror("socket");
@@ -68,8 +70,8 @@ int createListenUsocket(const char* SOCKET_PATH) {
     struct sockaddr_un addr;
     memset(&addr, 0x00, sizeof(struct sockaddr_un));
     addr.sun_family = AF_UNIX;
-    strcpy(addr.sun_path, SOCKET_PATH);
-    unlink(SOCKET_PATH);
+    strcpy(addr.sun_path, m_unix_socket_path);
+    unlink(m_unix_socket_path);
     if (bind(usockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("bind");
         close(usockfd);
@@ -102,7 +104,7 @@ int createConnectSocket(const char* server_ip, int server_port) {
     return conn_fd;
 }
 
-int createConnectUsocket(const char* SOCKET_PATH) {
+int createConnectUsocket(const char* m_unix_socket_path) {
     int usockfd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (usockfd < 0) {
         perror("socket");
@@ -111,7 +113,7 @@ int createConnectUsocket(const char* SOCKET_PATH) {
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(struct sockaddr_un));
     addr.sun_family = AF_UNIX;
-    strcpy(addr.sun_path, SOCKET_PATH);
+    strcpy(addr.sun_path, m_unix_socket_path);
     if (connect(usockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("connect");
         close(usockfd);
@@ -152,29 +154,10 @@ ssize_t writen(const int fd, const char* buf, const size_t n) {   // for no epol
         offset += nwrite;
         nleft -= nwrite;
     }
-    return n;
+    return offset;
 }
 
-ssize_t readn(const int fd, char* buf, const size_t n) {   // for LT and non-block
-    int nleft = n, nread, offset = 0;
-    while (nleft > 0) {
-        nread = read(fd, buf + offset, nleft);
-        if (nread < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-                continue;   // 在LT的情况下不可能出现无数据可读的情况，如果出现，那是网络问题接着读，也可以使用unrecv_len做状态记录，状态记录的方法也可以防御攻击者构造小包，但是这需要缓冲区独立
-            }
-            return nread;
-        } else if (nread == 0) {
-            perror("read");
-            return 0;
-        }
-        offset += nread;
-        nleft -= nread;
-    }
-    return n;
-}
-
-ssize_t readnn(const int fd, char* buf, const size_t n) {   // for LT and non-block
+ssize_t readn(const int fd, char* buf, const size_t n) {   // for nonblock
     int nleft = n, nread, offset = 0;
     while (nleft > 0) {
         nread = read(fd, buf + offset, nleft);
@@ -182,12 +165,12 @@ ssize_t readnn(const int fd, char* buf, const size_t n) {   // for LT and non-bl
             if (errno == EINTR) {
                 continue;
             } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                return offset;   // 在外头将返回值给到unrecv_len并修改cur，注意这种情况缓冲区必须独立
+                return -2;
             }
             perror("read");
             return nread;
         } else if (nread == 0) {
-            return 0;
+            return nread;
         }
         offset += nread;
         nleft -= nread;
@@ -195,7 +178,9 @@ ssize_t readnn(const int fd, char* buf, const size_t n) {   // for LT and non-bl
     return n;
 }
 
-ssize_t mq_receive_n(const mqd_t fd, char* buf, const size_t n) {   // for block
+/*
+
+ssize_t mq_receive_n_b(const mqd_t fd, char* buf, const size_t n) {   // for block
     int nleft = n, nread, offset = 0;
     while (nleft > 0) {
         nread = mq_receive(fd, buf + offset, nleft, 0);
@@ -212,7 +197,27 @@ ssize_t mq_receive_n(const mqd_t fd, char* buf, const size_t n) {   // for block
     return n;
 }
 
-ssize_t mq_send_n(const mqd_t fd, const char* buf, const size_t n) {   // for block
+ssize_t mq_receive_n(const mqd_t fd, char* buf, const size_t n) {   // for nonblock
+    int nleft = n, nread, offset = 0;
+    while (nleft > 0) {
+        nread = mq_receive(fd, buf + offset, nleft, 0);
+        if (nread <= 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            if (nread == EAGAIN) {
+                return -2;
+            }
+            perror("mq_receive");
+            return nread;
+        }
+        offset += nread;
+        nleft -= nread;
+    }
+    return n;
+}
+
+ssize_t mq_send_n_b(const mqd_t fd, const char* buf, const size_t n) {   // for block
     int nleft, nwrite, offset;
     nleft = n;
     offset = 0;
@@ -231,15 +236,21 @@ ssize_t mq_send_n(const mqd_t fd, const char* buf, const size_t n) {   // for bl
     return n;
 }
 
+// 这里的考虑是多此一举了，人家mqueue的每则消息是有边界的，能确保一次性读完的，你这么写不仅是多此一举且就不行，因为mq_receive的第三个参数即长度必须编译时确定，这么写会报错: Message too long
+
+*/
+
 ssize_t readn_b(const int fd, char* buf, const size_t n) {   // for block
     int nleft = n, nread, offset = 0;
     while (nleft > 0) {
         nread = read(fd, buf + offset, nleft);
-        if (nread <= 0) {
+        if (nread < 0) {
             if (errno == EINTR) {
                 continue;
             }
             perror("read");
+            return nread;
+        } else if (nread == 0) {
             return nread;
         }
         offset += nread;
@@ -252,11 +263,35 @@ ssize_t recvn_b(const int fd, char* buf, const size_t n, int flags) {   // for b
     int nleft = n, nread, offset = 0;
     while (nleft > 0) {
         nread = recv(fd, buf + offset, nleft, flags);
-        if (nread <= 0) {
+        if (nread < 0) {
             if (errno == EINTR) {
                 continue;
             }
-            perror("recv");
+            perror("recv for block");
+            return nread;
+        } else if (nread == 0) {
+            return nread;
+        }
+        offset += nread;
+        nleft -= nread;
+    }
+    return n;
+}
+
+ssize_t recvn(const int fd, char* buf, const size_t n, int flags) {   // for nonblock
+    int nleft = n, nread, offset = 0;
+    while (nleft > 0) {
+        nread = recv(fd, buf + offset, nleft, flags);
+        if (nread < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return -2;
+            }
+            perror("recv for nonblock");
+            return nread;
+        } else if (nread == 0) {
             return nread;
         }
         offset += nread;

@@ -13,6 +13,7 @@
 #define CLIENTS_H 1024
 
 void readWorker(int sockfd) {
+    sleep(1);
     // 1 pre
     // (1) users
     int userssize = (CLIENTS_H * (MAX_NAME_LEN_H + 1)) * sizeof(char);
@@ -42,6 +43,12 @@ void readWorker(int sockfd) {
         return;
     }
     ssize_t recvlen;
+    // (5) create usocket
+    int usockfd = createConnectUsocket(USERS_USOCKET_PATH);
+    if (usockfd == -1) {
+        fprintf(stderr, "Err: create connect unix socket failed.\n");
+        return;
+    }
     // 2 main-while
     while (1) {
         bzero((void*)packet, packetsize);
@@ -50,7 +57,7 @@ void readWorker(int sockfd) {
             std::cerr << "Err: recv error." << std::endl;
             continue;
         } else if (recvlen == 0) {
-            std::cout << "server closed." << std::endl;
+            std::cout << "Err: server closed in read worker head." << std::endl;
             break;
         }
         if (packet->trans_type == REGISTER) {
@@ -61,10 +68,9 @@ void readWorker(int sockfd) {
                 std::cerr << "Err: recv error." << std::endl;;
                 continue;
             } else if (recvlen == 0) {
-                std::cout << "server closed." << std::endl;
+                std::cout << "Err: server closed in read worker register." << std::endl;
                 break;
             }
-            int usockfd = createConnectUsocket(USERS_USOCKET_PATH);
             if (writen(usockfd, (char*)packet, PACKET_HEAD_SIZE_H) < 0) {
                 std::cerr << "Err: send error" << std::endl;
                 continue;
@@ -80,21 +86,21 @@ void readWorker(int sockfd) {
                 std::cerr << "Err: recv error." << std::endl;;
                 continue;
             } else if (recvlen == 0) {
-                std::cout << "server closed." << std::endl;
+                std::cout << "Err: server closed in read worker body." << std::endl;
                 break;
             }
             if (packet->trans_type == ALL) {
-                if (mq_send_n(mq_recvall, (char*)packet, PACKET_HEAD_SIZE_H + packet->datalen)) {
-                    std::cerr << "send packet to recv all mq falied." << std::endl;
+                if (mq_send(mq_recvall, (char*)packet, PACKET_HEAD_SIZE_H + packet->datalen, 0)) {
+                    perror("mq_send");
                     continue;
                 }
             } else if (packet->trans_type == SINGLE) {
-                if (mq_send_n(mq_recvsingle, (char*)packet, PACKET_HEAD_SIZE_H + packet->datalen)) {
-                    std::cerr << "send packet to recv single mq falied." << std::endl;
+                if (mq_send(mq_recvsingle, (char*)packet, PACKET_HEAD_SIZE_H + packet->datalen, 0)) {
+                    perror("mq_send");
                     continue;
                 }
             } else {
-                std::cerr << "unknown type, may be attack." << std::endl;
+                std::cerr << "Err: unknown type, may be attack." << std::endl;
                 continue;
             }
         }
@@ -106,6 +112,7 @@ void readWorker(int sockfd) {
 }
 
 void writeWorker(int sockfd) {
+    sleep(1);
     // 1 pre
     // (1) get mq
     mqd_t mq = mq_open(SEND_MQUEUE, O_RDONLY);
@@ -114,26 +121,41 @@ void writeWorker(int sockfd) {
         return;
     }
     // (2) pre packet
-    size_t packetsize = (PACKET_HEAD_SIZE_H + MAX_DATA_LEN_H + 1) * sizeof(char);
+    size_t packetsize = (PACKET_HEAD_SIZE_H + MAX_DATA_LEN_H + 1) * sizeof(char);   // 296
     Packet* packet = (Packet*)malloc(packetsize);
     if (packet == NULL) {
         std::cerr << "Err: create packet failed." << std::endl;
         mq_close(mq);
         return;
     }
+    /*
+    struct mq_attr attr;
+    if (mq_getattr(mq, &attr) == -1) {
+        perror("mq_getattr");
+        return;
+    } else if (attr.mq_msgsize == 404) {
+        printf("Max message size: %ld\n", attr.mq_msgsize);
+    } else {
+        printf("???\n");
+    }
+    */
     // 2 main-while
     while (1) {
         bzero((void*)packet, packetsize);
-        if (mq_receive_n(mq, (char*)packet, PACKET_HEAD_SIZE_H) <= 0) {
-            std::cerr << "Err: read from send mq failed." << std::endl;
-            continue;
-        } else {
-            if (mq_receive_n(mq, (char*)packet + PACKET_HEAD_SIZE_H, packet->datalen) <= 0) {
-                std::cerr << "Err: read from send mq failed." << std::endl;
-                continue;
-            }
+        if (mq_receive(mq, (char*)packet, packetsize, 0) <= 0) {
+            perror("mq_receive");
+            fprintf(stderr, "Err: mq_r in client.cpp error.\n");
+            break;
+            // continue;
         }
-        if (writen(sockfd, (char*)packet, PACKET_HEAD_SIZE_H + packet->datalen)) {
+        printf("debug :\n");
+        printf("head :\n");
+        printf("type : %d\n", packet->trans_type);
+        printf("datalen : %d\n", packet->datalen);
+        printf("srcname : %s\n", packet->srcname);
+        printf("dstname : %s\n", packet->dstname);
+        printf("data : %s\n", packet->data);
+        if (writen(sockfd, (char*)packet, PACKET_HEAD_SIZE_H + packet->datalen) < 0) {
             std::cerr << "Err: send packet to socket falied." << std::endl;
         }
     }

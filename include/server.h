@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string>
 #include <string.h>
 #include <unistd.h>
 #include <unordered_map>
@@ -27,7 +28,7 @@ class Server {
         const int MAX_DATA_LEN;
         int packetsize;
         Packet* packet;
-        std::unordered_map<char*, int> clients;
+        std::unordered_map<std::string, int> clients;
         int userssize;
         char* usersbuf;
 

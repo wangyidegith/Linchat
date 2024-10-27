@@ -1,7 +1,6 @@
 #include <iostream>
 #include <unistd.h>
 #include <string.h>
-#include <mqueue.h>
 #include <sys/socket.h>
 
 #include "../../include/client-shared.h"
@@ -55,7 +54,7 @@ int main() {
             std::cerr << "Err: recv error." << std::endl;
             continue;
         } else if (recvlen == 0) {
-            std::cout << "server closed." << std::endl;
+            std::cout << "Err: unix socket closed." << std::endl;
             break;
         }
         // (2) read body
@@ -66,7 +65,7 @@ int main() {
             std::cerr << "Err: recv error." << std::endl;;
             continue;
         } else if (recvlen == 0) {
-            std::cout << "server closed." << std::endl;
+            std::cout << "Err: unix socket closed." << std::endl;
             break;
         }
         char* cur = usersbuf;
